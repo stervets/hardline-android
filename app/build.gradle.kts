@@ -43,6 +43,10 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
+
+    // SIP stack (PJSIP/PJSUA2) packaged as AAR (no NDK/CMake steps in this project)
+    implementation("com.pjdroid:pjdroid:2.2.4")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

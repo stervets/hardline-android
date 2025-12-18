@@ -13,6 +13,7 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
+    private lateinit var sip: SipClient
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,24 +27,63 @@ class MainActivity : AppCompatActivity() {
         web.webChromeClient = WebChromeClient()
         web.webViewClient = WebViewClient()
 
+        // JS -> Native
         web.addJavascriptInterface(HardlineBridge(), "HardlineNative")
 
-        // Вариант 1: грузим Nuxt dev server (пока самый простой)
-        web.loadUrl("http://10.0.2.2:3001/") // 10.0.2.2 = localhost твоего ПК в эмуляторе
+        // Native -> JS (через callback)
+        sip = SipClient { payloadJson ->
+            runOnUiThread {
+                // payloadJson должен быть валидным JSON-объектом
+                val safe = JSONObject(payloadJson).toString()
+                web.evaluateJavascript(
+                    "window.onHardlineEvent && window.onHardlineEvent($safe)",
+                    null
+                )
+            }
+        }
+
+        web.loadUrl("http://10.0.2.2:3001/")
     }
 
     inner class HardlineBridge {
 
         @JavascriptInterface
         fun register(json: String) {
-            Log.d("Hardline", "register: $json")
-            emitToUi("""{"type":"registered"}""")
+            try {
+                val o = JSONObject(json)
+
+                val bundle = SipBundle(
+                    username = o.getString("username"),
+                    password = o.getString("password"),
+                    host = o.getString("host"),
+                    realm = o.getString("realm"),
+                    port = o.optInt("port", 5060),
+                    transport = o.optString("transport", "udp"),
+                )
+
+                Log.d(
+                    "Hardline",
+                    "sip register requested: ${bundle.username}@${bundle.host}:${bundle.port}; transport=${bundle.transport}"
+                )
+
+                emitToUi("""{"type":"sip","state":"register_requested"}""")
+
+                if (bundle.transport.lowercase() != "udp") {
+                    emitToUi("""{"type":"sip","state":"failed","reason":"transport_must_be_udp"}""")
+                    return
+                }
+
+                sip.register(bundle)
+            } catch (e: Exception) {
+                Log.e("Hardline", "register parse failed: ${e.message}")
+                throw e
+            }
         }
 
         @JavascriptInterface
         fun call(number: String) {
             Log.d("Hardline", "call: $number")
-            emitToUi("""{"type":"call_state","state":"calling","to":"$number"}""")
+            emitToUi("""{"type":"call_state","state":"calling","to":${jsonStr(number)}}""")
         }
 
         @JavascriptInterface
@@ -66,8 +106,14 @@ class MainActivity : AppCompatActivity() {
         private fun emitToUi(payloadJson: String) {
             runOnUiThread {
                 val safe = JSONObject(payloadJson).toString()
-                web.evaluateJavascript("window.onHardlineEvent && window.onHardlineEvent($safe)", null)
+                web.evaluateJavascript(
+                    "window.onHardlineEvent && window.onHardlineEvent($safe)",
+                    null
+                )
             }
         }
     }
 }
+
+private fun jsonStr(s: String): String =
+    "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
