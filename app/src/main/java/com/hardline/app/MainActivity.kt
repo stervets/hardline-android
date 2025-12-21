@@ -89,7 +89,7 @@ class MainActivity : AppCompatActivity() {
         checkServer(
             url = url,
             onOk = {
-                web.loadUrl("$url/")
+                web.loadUrl("$url/list")
             },
             onFail = {
                 promptServerUrl("Сервер недоступен")
